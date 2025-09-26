@@ -167,8 +167,8 @@ function checkTaskNotifications() {
     const dueTime = new Date(task.due);
     const diff = dueTime - now;
 
-    // Within 1 minute or exactly due
-    if (Math.abs(diff) <= 60000 && !task.notified) {
+    // If due now or within the next 1 min
+    if (diff <= 60000 && diff >= 0 && !task.notified) {
       notifyTask(task, dueTime);
 
       // Mark as notified
@@ -178,7 +178,8 @@ function checkTaskNotifications() {
   });
 }
 
-setInterval(checkTaskNotifications, 60000); // check every 1 min
+// Run every 10 seconds instead of every minute
+setInterval(checkTaskNotifications, 10000);
 
 
 // =============================
