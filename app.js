@@ -130,6 +130,34 @@ if ("Notification" in window && Notification.permission !== "granted") {
   Notification.requestPermission();
 }
 
+// =============================
+// Notifications (Browser + Capacitor)
+// =============================
+async function notifyTask(task, dueTime) {
+  // Try Capacitor LocalNotifications first
+  if (window.Capacitor && window.Capacitor.Plugins?.LocalNotifications) {
+    const { LocalNotifications } = window.Capacitor.Plugins;
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          title: "⏰ Task Due!",
+          body: `${task.title} (${task.subjectName || "No subject"}) is due at ${dueTime.toLocaleTimeString()}`,
+          id: task.id,
+          schedule: { at: dueTime },
+        },
+      ],
+    });
+  } else if ("Notification" in window) {
+    // Browser fallback
+    if (Notification.permission === "granted") {
+      new Notification("⏰ Task Due!", {
+        body: `${task.title} (${task.subjectName || "No subject"}) is due at ${dueTime.toLocaleTimeString()}`,
+        icon: "assets/notify.png",
+      });
+    }
+  }
+}
+
 function checkTaskNotifications() {
   const tasks = loadData("tasks");
   const now = new Date();
@@ -139,22 +167,11 @@ function checkTaskNotifications() {
     const dueTime = new Date(task.due);
     const diff = dueTime - now;
 
-    // ✅ Notify 10 minutes before (you can adjust minutes)
-    if (diff > 0 && diff <= 10 * 60000 && !task.notifiedEarly) {
-      new Notification("🔔 Upcoming Task", {
-        body: `${task.title} is due at ${dueTime.toLocaleTimeString()} (${task.subjectName || "No subject"})`,
-        icon: "assets/notify.png",
-      });
-      task.notifiedEarly = true;
-      saveData("tasks", tasks);
-    }
-
-    // ✅ Notify exactly at due time (within 1 min window)
+    // Within 1 minute or exactly due
     if (Math.abs(diff) <= 60000 && !task.notified) {
-      new Notification("⏰ Task Due!", {
-        body: `${task.title} is due NOW!`,
-        icon: "assets/notify.png",
-      });
+      notifyTask(task, dueTime);
+
+      // Mark as notified
       task.notified = true;
       saveData("tasks", tasks);
     }
@@ -162,6 +179,7 @@ function checkTaskNotifications() {
 }
 
 setInterval(checkTaskNotifications, 60000); // check every 1 min
+
 
 // =============================
 // Chart (Weekly Overview)
