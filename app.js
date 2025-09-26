@@ -139,14 +139,22 @@ function checkTaskNotifications() {
     const dueTime = new Date(task.due);
     const diff = dueTime - now;
 
-    // Notify if within the next 1 minute
-    if (diff > 0 && diff <= 60000 && !task.notified) {
-      new Notification("⏰ Task Due!", {
-        body: `${task.title} (${task.subjectName || "No subject"}) is due at ${dueTime.toLocaleTimeString()}`,
-        icon: "assets/notify.png", // optional icon
+    // ✅ Notify 10 minutes before (you can adjust minutes)
+    if (diff > 0 && diff <= 10 * 60000 && !task.notifiedEarly) {
+      new Notification("🔔 Upcoming Task", {
+        body: `${task.title} is due at ${dueTime.toLocaleTimeString()} (${task.subjectName || "No subject"})`,
+        icon: "assets/notify.png",
       });
+      task.notifiedEarly = true;
+      saveData("tasks", tasks);
+    }
 
-      // Mark as notified so it won't spam
+    // ✅ Notify exactly at due time (within 1 min window)
+    if (Math.abs(diff) <= 60000 && !task.notified) {
+      new Notification("⏰ Task Due!", {
+        body: `${task.title} is due NOW!`,
+        icon: "assets/notify.png",
+      });
       task.notified = true;
       saveData("tasks", tasks);
     }
