@@ -1,16 +1,12 @@
 // =============================
-// LocalStorage Helpers
+// LocalStorage Helper
 // =============================
-function getData(key) {
+function saveData(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function loadData(key) {
   return JSON.parse(localStorage.getItem(key) || "[]");
-}
-function saveData(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
-}
-function generateId(key) {
-  let id = parseInt(localStorage.getItem(key + "_id") || "1");
-  localStorage.setItem(key + "_id", id + 1);
-  return id;
 }
 
 // =============================
@@ -18,23 +14,24 @@ function generateId(key) {
 // =============================
 const themeButtons = document.querySelectorAll(".theme-btn");
 const body = document.body;
+
 const savedTheme = localStorage.getItem("theme") || "light";
 body.setAttribute("data-theme", savedTheme);
 updateThemeButtons(savedTheme);
 
 themeButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
-    const theme = btn.dataset.theme;
+    const theme = btn.getAttribute("data-theme");
     body.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
     updateThemeButtons(theme);
-    loadTasks();
+    loadTasks(); // refresh chart colors
   });
 });
 
 function updateThemeButtons(activeTheme) {
   themeButtons.forEach((btn) =>
-    btn.classList.toggle("active", btn.dataset.theme === activeTheme)
+    btn.classList.toggle("active", btn.getAttribute("data-theme") === activeTheme)
   );
 }
 
@@ -42,7 +39,7 @@ function updateThemeButtons(activeTheme) {
 // Subjects
 // =============================
 function loadSubjects() {
-  const subjects = getData("subjects");
+  const subjects = loadData("subjects");
   const list = document.getElementById("subjectsList");
   list.innerHTML = "";
 
@@ -68,8 +65,9 @@ function loadSubjects() {
 document.getElementById("addSubjectBtn").addEventListener("click", () => {
   const input = document.getElementById("subjectName");
   if (input.value.trim()) {
-    const subjects = getData("subjects");
-    subjects.push({ id: generateId("subject"), name: input.value.trim() });
+    const subjects = loadData("subjects");
+    const newSub = { id: Date.now(), name: input.value.trim() };
+    subjects.push(newSub);
     saveData("subjects", subjects);
     input.value = "";
     loadSubjects();
@@ -80,21 +78,19 @@ document.getElementById("addSubjectBtn").addEventListener("click", () => {
 // Tasks
 // =============================
 function loadTasks() {
-  const tasks = getData("tasks");
-  const subjects = getData("subjects");
+  const tasks = loadData("tasks");
   const list = document.getElementById("tasksList");
   list.innerHTML = "";
 
   tasks.forEach((task) => {
-    const subject = subjects.find((s) => s.id == task.subject_id);
     const dueDate = new Date(task.due);
     const li = document.createElement("li");
     li.className = "list-item fade-in";
     li.innerHTML = `
       <h4>${task.title}</h4>
-      <p>Subject: ${subject ? subject.name : "N/A"}</p>
+      <p>Subject: ${task.subjectName || "N/A"}</p>
       <div class="item-meta">
-        <span class="tag">${subject ? subject.name : ""}</span>
+        <span class="tag">${task.subjectName || ""}</span>
         <span class="timestamp">${dueDate.toLocaleString()}</span>
       </div>
       <button class="btn btn-sm delete-btn" data-id="${task.id}" data-type="task">❌</button>
@@ -108,11 +104,12 @@ function loadTasks() {
 document.getElementById("addTaskBtn").addEventListener("click", () => {
   const title = document.getElementById("taskTitle").value.trim();
   const subject_id = document.getElementById("taskSubject").value;
+  const subjectName = document.querySelector(`#taskSubject option[value="${subject_id}"]`)?.textContent || "";
   const due = document.getElementById("taskDue").value;
 
   if (title && subject_id && due) {
-    const tasks = getData("tasks");
-    tasks.push({ id: generateId("task"), title, subject_id, due });
+    const tasks = loadData("tasks");
+    tasks.push({ id: Date.now(), title, subject_id, subjectName, due });
     saveData("tasks", tasks);
 
     document.getElementById("taskTitle").value = "";
@@ -121,6 +118,38 @@ document.getElementById("addTaskBtn").addEventListener("click", () => {
     loadTasks();
   }
 });
+
+// =============================
+// Notifications
+// =============================
+if ("Notification" in window && Notification.permission !== "granted") {
+  Notification.requestPermission();
+}
+
+function checkTaskNotifications() {
+  const tasks = loadData("tasks");
+  const now = new Date();
+
+  tasks.forEach((task) => {
+    if (!task.due) return;
+    const dueTime = new Date(task.due);
+    const diff = dueTime - now;
+
+    // Notify if within the next 1 minute
+    if (diff > 0 && diff <= 60000 && !task.notified) {
+      new Notification("⏰ Task Due!", {
+        body: `${task.title} (${task.subjectName || "No subject"}) is due at ${dueTime.toLocaleTimeString()}`,
+        icon: "assets/notify.png", // optional icon
+      });
+
+      // Mark as notified so it won't spam
+      task.notified = true;
+      saveData("tasks", tasks);
+    }
+  });
+}
+
+setInterval(checkTaskNotifications, 60000); // check every 1 min
 
 // =============================
 // Chart (Weekly Overview)
@@ -132,8 +161,8 @@ function updateChart(tasks = []) {
 
   const counts = [0, 0, 0, 0, 0, 0, 0];
   tasks.forEach((t) => {
-    const d = new Date(t.due).getDay();
-    counts[d === 0 ? 6 : d - 1]++;
+    const d = new Date(t.due).getDay(); // 0=Sun, 6=Sat
+    counts[d === 0 ? 6 : d - 1]++; // shift Sun → last
   });
 
   if (chart) chart.destroy();
@@ -165,20 +194,21 @@ function updateChart(tasks = []) {
 }
 
 // =============================
-// Delete (Subjects, Tasks)
+// Delete Buttons
 // =============================
 document.addEventListener("click", (e) => {
   if (e.target.classList.contains("delete-btn")) {
     const id = parseInt(e.target.dataset.id);
     const type = e.target.dataset.type;
+
     if (confirm("Are you sure?")) {
       if (type === "subject") {
-        let subs = getData("subjects").filter((s) => s.id !== id);
-        saveData("subjects", subs);
+        let subjects = loadData("subjects").filter((s) => s.id !== id);
+        saveData("subjects", subjects);
         loadSubjects();
       }
       if (type === "task") {
-        let tasks = getData("tasks").filter((t) => t.id !== id);
+        let tasks = loadData("tasks").filter((t) => t.id !== id);
         saveData("tasks", tasks);
         loadTasks();
       }
@@ -192,5 +222,6 @@ document.addEventListener("click", (e) => {
 function init() {
   loadSubjects();
   loadTasks();
+  checkTaskNotifications(); // check immediately on load
 }
 init();
