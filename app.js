@@ -9,6 +9,10 @@ function loadData(key) {
   return JSON.parse(localStorage.getItem(key) || "[]");
 }
 
+if ("Notification" in window && Notification.permission !== "granted") {
+  Notification.requestPermission();
+}
+
 // =============================
 // Theme Management
 // =============================
